@@ -5,6 +5,9 @@ import pickle
 import hashlib
 import elasticsearch
 from elasticsearch import Elasticsearch, helpers
+import os
+
+#todo : static strings export to seperate file
 
 # API KEY
 FCM_API_KEY = "AAAAqpUjsQA:APA91bHjT1sqmCJzoIc6ZO3D0QO9kcsltMnUaz8ZYEN9lSNvUAkX69ApmyOYU3sPWoYf0P3pvK5v30I29jFlCq6A1hLdJjC7hrEZHZq1_3ofUcc4cJYnR7k93v7CdU865isOi2N7H8Ru"
@@ -46,21 +49,40 @@ class ResponseToSecurityIssue:
 
     def operate_collect_bin(self):
 
-        def get_while_hash_list(path):
-            while_hash_list = [
-                "9af5f1ee1569f451673de9ef083ad807"
-            ]
+        def check_elf_file(file_path):
+            fd = open(file_path, "rb")
+            signature = fd.read(4)
+            if signature == b"\x7fELF":
+                return True
+            else:
+                return False
 
-            return while_hash_list
+        def get_white_hash_list(path):
+            white_hash_list = list()
+
+            for path, dir, files in os.walk(path):
+                for file in files:
+                    file_path = "%s/%s" % (path, file)
+                    try:
+                        if check_elf_file(file_path) == False: continue
+                        fd = open(file_path, "rb")
+                    except Exception as e:
+                        continue
+                    else:
+                        hash_md5 = hashlib.md5()
+                        for chunk in iter(lambda: fd.read(4096), b""):
+                            hash_md5.update(chunk)
+
+                        white_hash_list.append((file_path, hash_md5.hexdigest()))
+            return white_hash_list
 
         OPERATE_COLLECT_BIN = {
             "operator": "get_black_bin",
-            "white_hash_list": get_while_hash_list(WHITE_FILE_PATH)
+            "white_hash_list": get_white_hash_list(WHITE_FILE_PATH)
         }
 
         if "ap_uuid" in self.alert_data:
             ip, port = self.db.select_ap_ip_port_by_ap_uuid(self.alert_data["ap_uuid"])
-
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((ip, int(port)))
                 data = pickle.dumps(OPERATE_COLLECT_BIN)
@@ -93,4 +115,5 @@ class ElasticsearchWrapper:
         }]
 
         result = elasticsearch.helpers.bulk(self.es, data)
-        print()
+
+        # add logger by result
